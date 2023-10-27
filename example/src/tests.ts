@@ -19,10 +19,6 @@ function test(name: string, perform: () => Promise<boolean>) {
   tests.push({ name, run: perform });
 }
 
-// test("can fail", async () => {
-//   return false;
-// });
-
 test("can make a client", async () => {
   const client = await XMTP.Client.createRandom({
     env: "local",
@@ -493,5 +489,102 @@ test("can send read receipts", async () => {
   }
 
   return true;
+});
+
+test("can stream all messages", async () => {
+  const bo = await XMTP.Client.createRandom({ env: "local" });
+  await delayToPropogate();
+  const alix = await XMTP.Client.createRandom({ env: "local" });
+  await delayToPropogate();
+
+  // Record message stream across all conversations
+  const allMessages: DecodedMessage[] = [];
+  await alix.conversations.streamAllMessages(async (message) => {
+    allMessages.push(message);
+  });
+
+  // Start Bob starts a new conversation.
+  const boConvo = await bo.conversations.newConversation(alix.address);
+  await delayToPropogate();
+
+  for (let i = 0; i < 5; i++) {
+    await boConvo.send({ text: `Message ${i}` });
+    await delayToPropogate();
+  }
+  if (allMessages.length !== 5) {
+    throw Error("Unexpected all messages count " + allMessages.length);
+  }
+
+  // Starts a new conversation.
+  const caro = await XMTP.Client.createRandom({ env: "local" });
+  const caroConvo = await caro.conversations.newConversation(alix.address);
+  await delayToPropogate();
+  for (let i = 0; i < 5; i++) {
+    await caroConvo.send({ text: `Message ${i}` });
+    await delayToPropogate();
+  }
+  if (allMessages.length !== 10) {
+    throw Error("Unexpected all messages count " + allMessages.length);
+  }
+
+  alix.conversations.cancelStreamAllMessages();
+
+  await alix.conversations.streamAllMessages(async (message) => {
+    allMessages.push(message);
+  });
+
+  for (let i = 0; i < 5; i++) {
+    await boConvo.send({ text: `Message ${i}` });
+    await delayToPropogate();
+  }
+  if (allMessages.length <= 10) {
+    throw Error("Unexpected all messages count " + allMessages.length);
+  }
+
+
+  return true;
+});
+
+test("canManagePreferences", async () => {
+  const bo = await XMTP.Client.createRandom({ env: "local" });
+  const alix = await XMTP.Client.createRandom({ env: "local" });
+  await delayToPropogate();
+
+  const alixConversation = await bo.conversations.newConversation(
+      alix.address,
+  );
+  await delayToPropogate();
+
+  const initialConvoState = await alixConversation.consentState();
+  if (initialConvoState != "allowed") {
+    throw new Error(`conversations created by bo should be allowed by default not ${initialConvoState}`);
+  }
+
+  const initialState = await bo.contacts.isAllowed(alixConversation.peerAddress);
+  if (!initialState) {
+    throw new Error(`contacts created by bo should be allowed by default not ${initialState}`);
+  }
+
+  bo.contacts.block([alixConversation.peerAddress]);
+  await delayToPropogate();
+
+  const blockedState = await bo.contacts.isBlocked(alixConversation.peerAddress);
+  const allowedState = await bo.contacts.isAllowed(alixConversation.peerAddress);
+  if (!blockedState) {
+    throw new Error(`contacts blocked by bo should be blocked not ${blockedState}`);
+  }
+
+  if (allowedState) {
+    throw new Error(`contacts blocked by bo should be blocked not ${allowedState}`);
+  }
+
+  const convoState = await alixConversation.consentState();
+  await delayToPropogate();
+
+  if (convoState != "blocked") {
+    throw new Error(`conversations blocked by bo should be blocked not ${convoState}`);
+  }
+  
+  return true
 });
 

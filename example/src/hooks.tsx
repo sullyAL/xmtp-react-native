@@ -17,6 +17,7 @@ import { downloadFile, uploadFile } from "./storage";
  */
 export function useConversationList(): UseQueryResult<Conversation[]> {
   const { client } = useXmtp();
+  client?.contacts.refreshConsentList();
   return useQuery<Conversation[]>(
     ["xmtp", "conversations", client?.address],
     () => client!.conversations.list(),
@@ -248,7 +249,7 @@ export function usePrepareRemoteAttachment({
   fileUri,
   mimeType,
 }: {
-  fileUri?: `file://${string}`;
+  fileUri?: string;
   mimeType?: string;
 }): {
   remoteAttachment: RemoteAttachmentContent | undefined;

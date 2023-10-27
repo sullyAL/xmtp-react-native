@@ -78,11 +78,8 @@ public class XMTPModule: Module {
         private var clients: [String: XMTP.Client] = [:]
 
         // A method to update the conversations
-        func updateClient(key: String, client: XMTP.Client?) {
-            if clients[key] == nil, let client {
-                ContentJson.initCodecs(client: client)
-            }
-
+        func updateClient(key: String, client: XMTP.Client) {
+            ContentJson.initCodecs(client: client)
             clients[key] = client
         }
 
@@ -519,6 +516,52 @@ public class XMTPModule: Module {
             let decodedMessage = try conversation.decode(envelope)
             return try DecodedMessageWrapper.encode(decodedMessage)
         }
+
+        AsyncFunction("isAllowed") { (clientAddress: String, address: String) -> Bool in
+            guard let client = await clientsManager.getClient(key: clientAddress) else {
+                throw Error.noClient
+            }
+            return await client.contacts.isAllowed(address)
+        }
+
+        AsyncFunction("isBlocked") { (clientAddress: String, address: String) -> Bool in
+            guard let client = await clientsManager.getClient(key: clientAddress) else {
+                throw Error.noClient
+            }
+            return await client.contacts.isBlocked(address)
+        }
+
+        AsyncFunction("blockContacts") { (clientAddress: String, addresses: [String]) in
+            guard let client = await clientsManager.getClient(key: clientAddress) else {
+                throw Error.noClient
+            }
+            try await client.contacts.block(addresses: addresses)
+        }
+
+        AsyncFunction("allowContacts") { (clientAddress: String, addresses: [String]) in
+            guard let client = await clientsManager.getClient(key: clientAddress) else {
+                throw Error.noClient
+            }
+            try await client.contacts.allow(addresses: addresses)
+        }
+        
+        AsyncFunction("refreshConsentList") { (clientAddress: String) in
+            guard let client = await clientsManager.getClient(key: clientAddress) else {
+                throw Error.noClient
+            }
+            try await client.contacts.refreshConsentList()
+        }  
+        
+        AsyncFunction("conversationConsentState") { (clientAddress: String, conversationTopic: String) -> String in
+            guard let conversation = try await findConversation(clientAddress: clientAddress, topic: conversationTopic) else {
+                throw Error.conversationNotFound(conversationTopic)
+            }
+            switch (await conversation.consentState()) {
+            case .allowed: return "allowed"
+            case .blocked: return "blocked"
+            case .unknown: return "unknown"
+            }
+        }     
     }
 
     //
