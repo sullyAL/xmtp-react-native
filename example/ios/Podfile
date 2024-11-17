@@ -8,7 +8,7 @@ podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties
 ENV['RCT_NEW_ARCH_ENABLED'] = podfile_properties['newArchEnabled'] == 'true' ? '1' : '0'
 ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] = '1' if podfile_properties['EX_DEV_CLIENT_NETWORK_INSPECTOR'] == 'true'
 
-platform :ios, '16.0'
+platform :ios, '14.0'
 install! 'cocoapods',
   :deterministic_uuids => false
 
@@ -48,7 +48,8 @@ target 'xmtpreactnativesdkexample' do
   # Flags change depending on the env values.
   flags = get_default_flags()
 
-  pod 'secp256k1.swift', :modular_headers => true
+  # See https://github.com/margelo/react-native-quick-crypto/issues/189#issuecomment-1711561970
+  pod "OpenSSL-Universal", "1.1.2200"
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -84,11 +85,11 @@ target 'xmtpreactnativesdkexample' do
     installer.generated_projects.each do |project|
         project.targets.each do |target|
             target.build_configurations.each do |config|
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
             end
         end
         project.build_configurations.each do |config|
-            config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+            config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
         end
     end
   end

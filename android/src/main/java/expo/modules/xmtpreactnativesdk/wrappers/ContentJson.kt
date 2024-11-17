@@ -1,6 +1,7 @@
 package expo.modules.xmtpreactnativesdk.wrappers
 
 import android.util.Base64
+import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.protobuf.ByteString
@@ -8,12 +9,16 @@ import org.xmtp.android.library.Client
 import org.xmtp.android.library.codecs.Attachment
 import org.xmtp.android.library.codecs.AttachmentCodec
 import org.xmtp.android.library.codecs.ContentTypeAttachment
+import org.xmtp.android.library.codecs.ContentTypeGroupUpdated
 import org.xmtp.android.library.codecs.ContentTypeId
 import org.xmtp.android.library.codecs.ContentTypeReaction
 import org.xmtp.android.library.codecs.ContentTypeReadReceipt
 import org.xmtp.android.library.codecs.ContentTypeRemoteAttachment
 import org.xmtp.android.library.codecs.ContentTypeReply
 import org.xmtp.android.library.codecs.ContentTypeText
+import org.xmtp.android.library.codecs.EncodedContent
+import org.xmtp.android.library.codecs.GroupUpdated
+import org.xmtp.android.library.codecs.GroupUpdatedCodec
 import org.xmtp.android.library.codecs.Reaction
 import org.xmtp.android.library.codecs.ReactionCodec
 import org.xmtp.android.library.codecs.ReadReceipt
@@ -28,16 +33,17 @@ import org.xmtp.android.library.codecs.description
 import org.xmtp.android.library.codecs.getReactionAction
 import org.xmtp.android.library.codecs.getReactionSchema
 import org.xmtp.android.library.codecs.id
-import org.xmtp.proto.message.contents.Content.EncodedContent
 import java.net.URL
 
 class ContentJson(
     val type: ContentTypeId,
     val content: Any?,
+    private val encodedContent: EncodedContent? = null,
 ) {
     constructor(encoded: EncodedContent) : this(
         type = encoded.type,
         content = encoded.decoded(),
+        encodedContent = encoded
     );
 
     companion object {
@@ -48,8 +54,7 @@ class ContentJson(
             Client.register(RemoteAttachmentCodec())
             Client.register(ReplyCodec())
             Client.register(ReadReceiptCodec())
-            // TODO:
-            //Client.register(CompositeCodec())
+            Client.register(GroupUpdatedCodec())
         }
 
         fun fromJsonObject(obj: JsonObject): ContentJson {
@@ -118,8 +123,8 @@ class ContentJson(
             return fromJsonObject(obj);
         }
 
-        fun bytesFrom64(bytes64: String): ByteArray = Base64.decode(bytes64, Base64.DEFAULT)
-        fun bytesTo64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.DEFAULT)
+        private fun bytesFrom64(bytes64: String): ByteArray = Base64.decode(bytes64, Base64.NO_WRAP)
+        fun bytesTo64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
     fun toJsonMap(): Map<String, Any> {
@@ -157,7 +162,12 @@ class ContentJson(
             ContentTypeReply.id -> mapOf(
                 "reply" to mapOf(
                     "reference" to (content as Reply).reference,
-                    "content" to ContentJson(content.contentType, content.content).toJsonMap(),
+                    "content" to ContentJson(
+                        content.contentType,
+                        content.content,
+                        encodedContent
+                    ).toJsonMap(),
+                    "contentType" to content.contentType.description
                 )
             )
 
@@ -165,11 +175,56 @@ class ContentJson(
                 "readReceipt" to ""
             )
 
-            else -> mapOf(
-                "unknown" to mapOf(
-                    "contentTypeId" to type.description
+            ContentTypeGroupUpdated.id -> mapOf(
+                "initiatedByInboxId" to (content as GroupUpdated).initiatedByInboxId,
+                "groupUpdated" to mapOf(
+                    "membersAdded" to content.addedInboxesList.map {
+                        mapOf(
+                            "inboxId" to it.inboxId
+                        )
+                    },
+                    "membersRemoved" to content.removedInboxesList.map {
+                        mapOf(
+                            "inboxId" to it.inboxId
+                        )
+                    },
+                    "metadataFieldsChanged" to content.metadataFieldChangesList.map {
+                        mapOf(
+                            "oldValue" to it.oldValue,
+                            "newValue" to it.newValue,
+                            "fieldName" to it.fieldName,
+                        )
+                    },
                 )
             )
+
+            else -> {
+                val json = JsonObject()
+                encodedContent?.let {
+                    val typeJson = JsonObject()
+                    typeJson.addProperty("authorityId", encodedContent.type.authorityId)
+                    typeJson.addProperty("typeId", encodedContent.type.typeId)
+                    typeJson.addProperty("versionMajor", encodedContent.type.versionMajor)
+                    typeJson.addProperty("versionMinor", encodedContent.type.versionMinor)
+                    val parameters = GsonBuilder().create().toJson(encodedContent.parametersMap)
+
+                    json.addProperty("fallback", encodedContent.fallback)
+                    json.add("parameters", JsonParser.parseString(parameters))
+                    json.add("type", typeJson)
+                    json.addProperty("content", bytesTo64(encodedContent.content.toByteArray()))
+
+                }
+                val encodedContentJSON = json.toString()
+                if (encodedContentJSON.isNotBlank()) {
+                    mapOf("encoded" to encodedContentJSON)
+                } else {
+                    mapOf(
+                        "unknown" to mapOf(
+                            "contentTypeId" to type.description
+                        )
+                    )
+                }
+            }
         }
     }
 }
